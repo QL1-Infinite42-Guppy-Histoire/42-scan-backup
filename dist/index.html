@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>42 Scan (Backup) — 42 Chain Explorer</title>
+<style>
+  :root{--bg:#0d1117;--panel:#161b22;--line:#30363d;--txt:#e6edf3;--dim:#8b949e;--acc:#58a6ff;--ok:#3fb950;--ng:#f85149;--warn:#d29922}
+  *{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--txt);font-family:system-ui,-apple-system,"Segoe UI",sans-serif}
+  a{color:var(--acc);text-decoration:none} a:hover{text-decoration:underline}
+  .mono{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:.92em;word-break:break-all}
+  header{background:var(--panel);border-bottom:1px solid var(--line);padding:14px 18px;position:sticky;top:0;z-index:5}
+  .row{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
+  h1{font-size:20px;margin:0} h1 small{color:var(--dim);font-size:12px;font-weight:normal}
+  .search{flex:1;min-width:260px;display:flex;gap:8px}
+  .search input{flex:1;background:var(--bg);border:1px solid var(--line);color:var(--txt);border-radius:8px;padding:10px 12px;font-size:14px}
+  .search button,.btn{background:#21262d;border:1px solid var(--line);color:var(--txt);border-radius:8px;padding:10px 16px;cursor:pointer}
+  .search button:hover,.btn:hover{border-color:var(--acc)}
+  main{max-width:1100px;margin:0 auto;padding:18px}
+  .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin:14px 0}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px}
+  .card .k{color:var(--dim);font-size:12px} .card .v{font-size:20px;margin-top:4px}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px;margin:14px 0;overflow-x:auto}
+  .panel h2{font-size:16px;margin:0 0 12px}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{text-align:left;padding:7px 8px;border-bottom:1px solid var(--line);white-space:nowrap}
+  th{color:var(--dim);font-weight:600}
+  .kv td:first-child{color:var(--dim);width:180px;white-space:normal}
+  .dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px}
+  .ok{background:var(--ok)} .ng{background:var(--ng)} .warn{background:var(--warn)}
+  .note{color:var(--dim);font-size:12px;line-height:1.6}
+  .tag{display:inline-block;border:1px solid var(--line);border-radius:20px;padding:1px 9px;font-size:11px;color:var(--dim)}
+  footer{color:var(--dim);font-size:12px;text-align:center;padding:24px;line-height:1.7}
+  .err{color:var(--ng)} .spinner{color:var(--dim)}
+  .notice{background:#2d2108;border-bottom:1px solid var(--warn);color:#f0c44c;font-size:13px;line-height:1.6;padding:9px 18px;text-align:center}
+  .notice a{color:#f0c44c;text-decoration:underline}
+</style>
+</head>
+<body>
+<header>
+  <div class="row">
+    <h1><a href="#/" style="color:var(--txt)">42 Scan</a> <small>backup explorer / scan.infinitedrive.xyz の予備サイト</small></h1>
+  </div>
+  <div class="row" style="margin-top:10px">
+    <form class="search" id="searchForm">
+      <input id="searchInput" placeholder="アドレス / トランザクション Hash / ブロック番号・Hash で検索" autocomplete="off">
+      <button type="submit">検索</button>
+    </form>
+  </div>
+  <div class="row" style="margin-top:8px">
+    <span class="note"><span class="dot warn" id="rpcDot"></span>RPC: <span id="rpcStatus">接続中…</span></span>
+    <span class="note"><span class="dot warn" id="apiDot"></span>本家 scan API: <span id="apiStatus">確認中…</span></span>
+  </div>
+</header>
+<div class="notice">予備エクスプローラー（超簡易版）：ブロック・取引は全履歴を表示できます。アドレスの取引履歴一覧は、本家APIが生きている間のみ補完表示します。<br>Backup explorer (simple version): blocks &amp; transactions cover the full history. Address history is complemented from the original API while it is alive.</div>
+<main id="app"><p class="spinner">読み込み中…</p></main>
+<footer>
+  42 Chain — EVM Chain ID 421018 / Cosmos infinite_421018-1 / 通貨 [42]<br>
+  このサイトは 42 Chain の公開 RPC から直接読む独立したエクスプローラーです。本家 scan が落ちていても、RPC が生きていればブロック・Tx・残高の確認ができます。<br>
+  履歴一覧（アドレスの全Tx等）はインデックスが必要なため、本家APIが生きている間はそちらから補完表示します（出典を明記）。<br>
+  42 Scan (Backup) — by <a href="https://ql1-infinite42-guppy-histoire.github.io/links/" target="_blank" rel="noopener">Guppy's Guide（グッピーズガイド）</a> ／ 本家 / Original: <a href="https://scan.infinitedrive.xyz" target="_blank" rel="noopener">scan.infinitedrive.xyz</a>
+</footer>
+<script>
+"use strict";
+const RPCS = [
+  "https://evm-rpc.infinitedrive.xyz",
+  "https://evm-rpc-infinite.mschihuahua.org",
+  "https://evm-rpc.infinitepanda.xyz",
+];
+let rpcIdx = 0;        // 現在優先するRPCのインデックス（失敗したら次へ回す）
+let rpcHost = RPCS[0]; // 最後に成功したRPC（ステータス表示用）
+const API = "https://scan.infinitedrive.xyz/api/v2";
+const TOKENS = [
+  {symbol:"FISH",    address:"0x2c32120a12B754272d9E85C57F64b50cA2C43513"},
+  {symbol:"PANIC",   address:"0xfAA842c8871f7F99c183F77871f79ce07DD056Cd"},
+  {symbol:"STARSHIP",address:"0x645D71e49B86CfBE3FB93081deC2c17a496Cd57d"},
+  {symbol:"ZAP",     address:"0x89195Ca5C954b6f99b78f4A2Aa5435A75Dc5B256"},
+  {symbol:"MARVIN",  address:"0xa307362f8a756722541dde6255AECf64F35Ba337"},
+  {symbol:"FOXXEY",  address:"0x68D5A28D3bf09a32d3b9C35714aB7A6166Ae2a00"},
+  {symbol:"TOWEL",   address:"0xD0f48123638BD243C3a0eE49D0D7BEb7404F9DE4"},
+  {symbol:"CAT42",   address:"0x7386719EBbBeB4d810fF89027Bfb8A1CDf696310"},
+  {symbol:"st42",    address:"0x78F40E828a92AF9e137FF7660E52Ac8B0f1D121E"},
+  {symbol:"QOM",     address:"0x53465CbBBA5b14f5Dc00794330f0f4aFb30EAA1d"},
+  {symbol:"USDT",    address:"0xC2684966e5c95B2bc636FB4a1f3Da9Ad23d94753"},
+  {symbol:"USDC",    address:"0xea5b7fD59b7ec0F34663835A3a361F469C2D4c5C"},
+];
+let rpcId = 0;
+// RPCSを順に試す共通fetch。成功したRPCを以後優先する（ローテーション）。
+async function rpcFetch(payload){
+  let lastErr;
+  for(let k=0;k<RPCS.length;k++){
+    const i = (rpcIdx + k) % RPCS.length;
+    try{
+      const r = await fetch(RPCS[i], {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(payload)});
+      if(!r.ok) throw new Error("RPC HTTP " + r.status);
+      const j = await r.json();
+      rpcIdx = i; rpcHost = RPCS[i];
+      return j;
+    }catch(e){ lastErr = e; }
+  }
+  throw lastErr || new Error("RPC unreachable");
+}
+async function rpc(method, params){
+  const j = await rpcFetch({jsonrpc:"2.0", method, params, id: ++rpcId});
+  if(j.error) throw new Error(j.error.message || "RPC error");
+  return j.result;
+}
+async function rpcBatch(calls){
+  const j = await rpcFetch(calls.map((c,i)=>({jsonrpc:"2.0", method:c[0], params:c[1], id:i+1})));
+  return j.sort((a,b)=>a.id-b.id).map(x=>x.result);
+}
+async function api(path){
+  const r = await fetch(API + path);
+  if(!r.ok) throw new Error("API HTTP " + r.status);
+  return r.json();
+}
+const hex = n => "0x" + n.toString(16);
+const num = h => parseInt(h, 16);
+const fmt42 = weiHex => {
+  const w = BigInt(weiHex); const d = 10n**18n;
+  const whole = w / d, frac = (w % d).toString().padStart(18,"0").slice(0,6).replace(/0+$/,"");
+  return whole.toLocaleString() + (frac ? "." + frac : "") + " [42]";
+};
+const fmtUnits = (v, dec=18) => {
+  const w = BigInt(v); const d = 10n**BigInt(dec);
+  const whole = w / d, frac = (w % d).toString().padStart(dec,"0").slice(0,4).replace(/0+$/,"");
+  return whole.toLocaleString() + (frac ? "." + frac : "");
+};
+const short = h => h ? h.slice(0,10) + "…" + h.slice(-8) : "-";
+const ago = ts => {
+  const s = Math.max(0, Math.floor(Date.now()/1000 - ts));
+  if(s < 60) return s + "秒前"; if(s < 3600) return Math.floor(s/60) + "分前";
+  if(s < 86400) return Math.floor(s/3600) + "時間前"; return Math.floor(s/86400) + "日前";
+};
+const time = ts => new Date(ts*1000).toLocaleString("ja-JP");
+const isAddr = s => /^0x[0-9a-fA-F]{40}$/.test(s);
+const isHash = s => /^0x[0-9a-fA-F]{64}$/.test(s);
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const app = document.getElementById("app");
+
+document.getElementById("searchForm").addEventListener("submit", e => {
+  e.preventDefault();
+  const q = document.getElementById("searchInput").value.trim();
+  if(!q) return;
+  if(isAddr(q)) location.hash = "#/address/" + q;
+  else if(isHash(q)) location.hash = "#/tx/" + q; // txかblockかはページ側で判定（見つからなければblockとして再試行）
+  else if(/^\d+$/.test(q)) location.hash = "#/block/" + q;
+  else app.innerHTML = '<div class="panel"><p class="err">形式が分かりませんでした。アドレス(0x+40桁)、Tx Hash(0x+64桁)、ブロック番号のどれかを入れてください。</p></div>';
+});
+
+async function checkStatus(){
+  try{
+    const cid = await rpc("eth_chainId", []);
+    document.getElementById("rpcStatus").textContent = "接続OK (Chain ID " + num(cid) + " / " + rpcHost.replace("https://","") + ")";
+    document.getElementById("rpcDot").className = "dot ok";
+  }catch(e){
+    document.getElementById("rpcStatus").textContent = "接続できません: " + e.message;
+    document.getElementById("rpcDot").className = "dot ng";
+  }
+  try{
+    await api("/stats");
+    document.getElementById("apiStatus").textContent = "稼働中（履歴の補完表示に使用）";
+    document.getElementById("apiDot").className = "dot ok";
+  }catch(e){
+    document.getElementById("apiStatus").textContent = "応答なし — RPCのみで表示中（これが予備サイトの本番モードです）";
+    document.getElementById("apiDot").className = "dot ng";
+  }
+}
+
+async function homePage(){
+  app.innerHTML = '<p class="spinner">最新ブロックを取得中…</p>';
+  const latest = num(await rpc("eth_blockNumber", []));
+  const gasPrice = await rpc("eth_gasPrice", []);
+  // 直近15ブロック + 平均ブロック時間
+  const calls = [];
+  for(let i=0;i<15;i++) calls.push(["eth_getBlockByNumber",[hex(latest-i), true]]);
+  const blocks = (await rpcBatch(calls)).filter(Boolean);
+  let avg = "-";
+  if(blocks.length > 1){
+    const span = num(blocks[0].timestamp) - num(blocks[blocks.length-1].timestamp);
+    avg = (span/(blocks.length-1)).toFixed(1) + " 秒";
+  }
+  let statsExtra = "";
+  try{
+    const s = await api("/stats");
+    statsExtra = `
+      <div class="card"><div class="k">総トランザクション数（本家API）</div><div class="v">${Number(s.total_transactions).toLocaleString()}</div></div>
+      <div class="card"><div class="k">総アドレス数（本家API）</div><div class="v">${Number(s.total_addresses).toLocaleString()}</div></div>`;
+  }catch(e){ /* 本家が落ちていてもホームは成立させる */ }
+  const blockRows = blocks.map(b => `<tr>
+    <td><a href="#/block/${num(b.number)}">${num(b.number).toLocaleString()}</a></td>
+    <td>${ago(num(b.timestamp))}<br><span class="note">${time(num(b.timestamp))}</span></td>
+    <td><a class="mono" href="#/block/${num(b.number)}">${short(b.hash)}</a></td>
+    <td>${b.transactions.length}</td>
+    <td><a class="mono" href="#/address/${b.miner}">${short(b.miner)}</a></td>
+    <td>${Number(num(b.gasUsed)).toLocaleString()}</td></tr>`).join("");
+  // 直近Tx: RPCで直近ブロックを遡って拾う（300ブロックずつ、最大1800ブロックまで）
+  let txRows = '<tr><td colspan="5" class="note">直近ブロックにTxが見つかりませんでした</td></tr>';
+  try{
+    const txs = [];
+    for(let start=0; start<1800 && txs.length<10; start+=300){
+      const scanCalls = [];
+      for(let i=start;i<start+300 && latest-i>=0;i++) scanCalls.push(["eth_getBlockByNumber",[hex(latest-i), true]]);
+      if(!scanCalls.length) break;
+      const scanned = (await rpcBatch(scanCalls)).filter(Boolean);
+      for(const b of scanned){ for(const t of b.transactions){ txs.push({t, ts:num(b.timestamp)}); if(txs.length>=10) break; } if(txs.length>=10) break; }
+    }
+    if(txs.length) txRows = txs.map(({t,ts}) => `<tr>
+      <td><a class="mono" href="#/tx/${t.hash}">${short(t.hash)}</a></td>
+      <td><a href="#/block/${num(t.blockNumber)}">${num(t.blockNumber).toLocaleString()}</a> <span class="note">${ago(ts)}</span></td>
+      <td><a class="mono" href="#/address/${t.from}">${short(t.from)}</a></td>
+      <td>${t.to ? `<a class="mono" href="#/address/${t.to}">${short(t.to)}</a>` : '<span class="tag">コントラクト作成</span>'}</td>
+      <td>${fmt42(t.value)}</td></tr>`).join("");
+  }catch(e){ /* noop */ }
+  app.innerHTML = `
+    <div class="cards">
+      <div class="card"><div class="k">最新ブロック（RPC）</div><div class="v">${latest.toLocaleString()}</div></div>
+      <div class="card"><div class="k">平均ブロック時間（直近15）</div><div class="v">${avg}</div></div>
+      <div class="card"><div class="k">ガス価格（RPC）</div><div class="v">${(num(gasPrice)/1e9).toLocaleString()} Gwei</div></div>
+      ${statsExtra}
+    </div>
+    <div class="panel"><h2>最新のブロック</h2><table>
+      <tr><th>ブロック</th><th>時刻</th><th>Hash</th><th>Tx数</th><th>生成者</th><th>Gas使用</th></tr>${blockRows}</table></div>
+    <div class="panel"><h2>最新のトランザクション（RPCで直近ブロックを走査）</h2><table>
+      <tr><th>Tx Hash</th><th>ブロック</th><th>From</th><th>To</th><th>金額</th></tr>${txRows}</table></div>`;
+}
+
+async function blockPage(arg){
+  app.innerHTML = '<p class="spinner">ブロックを取得中…</p>';
+  let b;
+  if(/^\d+$/.test(arg)) b = await rpc("eth_getBlockByNumber", [hex(Number(arg)), true]);
+  else b = await rpc("eth_getBlockByHash", [arg, true]);
+  if(!b){ app.innerHTML = '<div class="panel"><p class="err">このRPCではそのブロックが取得できませんでした。存在しないブロック番号か、RPCの一時的な問題の可能性があります。本家scanでも確認してください。</p></div>'; return; }
+  const txRows = b.transactions.length ? b.transactions.map(t => `<tr>
+    <td><a class="mono" href="#/tx/${t.hash}">${short(t.hash)}</a></td>
+    <td><a class="mono" href="#/address/${t.from}">${short(t.from)}</a></td>
+    <td>${t.to ? `<a class="mono" href="#/address/${t.to}">${short(t.to)}</a>` : '<span class="tag">コントラクト作成</span>'}</td>
+    <td>${fmt42(t.value)}</td></tr>`).join("") : '<tr><td colspan="4" class="note">Txなし</td></tr>';
+  app.innerHTML = `<div class="panel"><h2>ブロック ${num(b.number).toLocaleString()}</h2><table class="kv">
+    <tr><td>Hash</td><td class="mono">${esc(b.hash)}</td></tr>
+    <tr><td>時刻</td><td>${time(num(b.timestamp))}（${ago(num(b.timestamp))}）</td></tr>
+    <tr><td>親Hash</td><td class="mono"><a href="#/block/${b.parentHash}">${esc(b.parentHash)}</a></td></tr>
+    <tr><td>生成者（バリデータ）</td><td class="mono"><a href="#/address/${b.miner}">${esc(b.miner)}</a></td></tr>
+    <tr><td>Tx数</td><td>${b.transactions.length}</td></tr>
+    <tr><td>Gas使用 / 上限</td><td>${num(b.gasUsed).toLocaleString()} / ${num(b.gasLimit).toLocaleString()}</td></tr>
+    <tr><td>Base Fee</td><td>${b.baseFeePerGas ? (num(b.baseFeePerGas)/1e9).toLocaleString() + " Gwei" : "-"}</td></tr>
+    </table></div>
+    <div class="panel"><h2>このブロックのトランザクション</h2><table>
+    <tr><th>Tx Hash</th><th>From</th><th>To</th><th>金額</th></tr>${txRows}</table></div>`;
+}
+
+async function txPage(hash){
+  app.innerHTML = '<p class="spinner">トランザクションを取得中…</p>';
+  const t = await rpc("eth_getTransactionByHash", [hash]);
+  if(!t){ // TxでなければブロックHashとして再試行
+    const b = await rpc("eth_getBlockByHash", [hash, false]).catch(()=>null);
+    if(b){ location.hash = "#/block/" + num(b.number); return; }
+    app.innerHTML = '<div class="panel"><p class="err">見つかりませんでした。保留中（未確定）のTxか、存在しないHashです。</p></div>'; return;
+  }
+  const [receipt, block] = await Promise.all([
+    rpc("eth_getTransactionReceipt", [hash]).catch(()=>null),
+    t.blockNumber ? rpc("eth_getBlockByNumber", [t.blockNumber, false]).catch(()=>null) : null,
+  ]);
+  const status = !receipt ? '<span class="tag">保留中</span>'
+    : (receipt.status === "0x1" ? '<span style="color:var(--ok)">成功</span>' : '<span style="color:var(--ng)">失敗</span>');
+  app.innerHTML = `<div class="panel"><h2>トランザクション</h2><table class="kv">
+    <tr><td>Tx Hash</td><td class="mono">${esc(t.hash)}</td></tr>
+    <tr><td>ステータス</td><td>${status}</td></tr>
+    <tr><td>ブロック</td><td>${t.blockNumber ? `<a href="#/block/${num(t.blockNumber)}">${num(t.blockNumber).toLocaleString()}</a>` : "-"} ${block ? "（" + time(num(block.timestamp)) + "）" : ""}</td></tr>
+    <tr><td>From</td><td class="mono"><a href="#/address/${t.from}">${esc(t.from)}</a></td></tr>
+    <tr><td>To</td><td class="mono">${t.to ? `<a href="#/address/${t.to}">${esc(t.to)}</a>` : "コントラクト作成" + (receipt?.contractAddress ? `: <a href="#/address/${receipt.contractAddress}">${esc(receipt.contractAddress)}</a>` : "")}</td></tr>
+    <tr><td>金額</td><td>${fmt42(t.value)}</td></tr>
+    <tr><td>Gas使用 / 上限</td><td>${receipt ? num(receipt.gasUsed).toLocaleString() : "-"} / ${num(t.gas).toLocaleString()}</td></tr>
+    <tr><td>ガス価格</td><td>${t.gasPrice ? (num(t.gasPrice)/1e9).toLocaleString() + " Gwei" : "-"}</td></tr>
+    <tr><td>手数料</td><td>${receipt && t.gasPrice ? fmt42(hex(Number(BigInt(receipt.gasUsed) * BigInt(t.gasPrice)))) : "-"}</td></tr>
+    <tr><td>Nonce</td><td>${num(t.nonce)}</td></tr>
+    <tr><td>入力データ</td><td class="mono">${esc(t.input && t.input.length > 202 ? t.input.slice(0,202) + "…（全 " + ((t.input.length-2)/2) + " bytes）" : t.input)}</td></tr>
+    <tr><td>ログ件数</td><td>${receipt ? receipt.logs.length : "-"}</td></tr>
+    </table></div>`;
+}
+
+async function addressPage(addr){
+  app.innerHTML = '<p class="spinner">アドレスを取得中…</p>';
+  const [bal, nonce, code] = await rpcBatch([
+    ["eth_getBalance",[addr,"latest"]],
+    ["eth_getTransactionCount",[addr,"latest"]],
+    ["eth_getCode",[addr,"latest"]],
+  ]);
+  const isContract = code && code !== "0x";
+  // 既知トークン残高（eth_call balanceOf）
+  const pad = addr.toLowerCase().replace("0x","").padStart(64,"0");
+  const balCalls = TOKENS.map(tk => ["eth_call",[{to:tk.address, data:"0x70a08231" + pad},"latest"]]);
+  const bals = await rpcBatch(balCalls).catch(()=>[]);
+  const tokenRows = TOKENS.map((tk,i) => {
+    const v = bals[i]; if(!v || v === "0x" ) return "";
+    const amount = fmtUnits(v);
+    if(amount === "0") return "";
+    return `<tr><td><a href="#/address/${tk.address}">${tk.symbol}</a></td><td class="mono">${tk.address}</td><td>${amount}</td></tr>`;
+  }).join("");
+  // 履歴は本家APIから補完（生きている場合のみ、出典明記）
+  let histHtml = '<p class="note">履歴一覧はインデックスが必要で、RPCだけでは取得できません。本家APIが応答しないため、今回は履歴を表示できません（残高・ブロック・Tx単体はRPCで確認できます）。</p>';
+  try{
+    const h = await api("/addresses/" + addr + "/transactions?page_size=15");
+    if(h.items){
+      const rows = h.items.map(x => `<tr>
+        <td><a class="mono" href="#/tx/${x.hash}">${short(x.hash)}</a></td>
+        <td><a href="#/block/${x.block_number}">${Number(x.block_number).toLocaleString()}</a></td>
+        <td class="mono">${short(x.from.hash)}</td><td class="mono">${x.to ? short(x.to.hash) : "-"}</td>
+        <td>${fmt42(hex(Number(x.value)))}</td>
+        <td>${x.status === "ok" ? "成功" : esc(x.status || "")}</td></tr>`).join("");
+      histHtml = `<table><tr><th>Tx Hash</th><th>ブロック</th><th>From</th><th>To</th><th>金額</th><th>結果</th></tr>${rows}</table>
+        <p class="note">出典: 本家 scan.infinitedrive.xyz のAPI（履歴補完用）。残高など上部の情報はRPCから直接取得しています。</p>`;
+    }
+  }catch(e){ /* 本家ダウン時は上の案内のまま */ }
+  let nameHtml = "";
+  try{
+    const info = await api("/addresses/" + addr);
+    if(info.name) nameHtml = ` <span class="tag">${esc(info.name)}</span>`;
+    if(info.ens_domain_name) nameHtml += ` <span class="tag">${esc(info.ens_domain_name)}</span>`;
+  }catch(e){}
+  app.innerHTML = `<div class="panel"><h2>${isContract ? "コントラクト" : "アドレス"} ${nameHtml}</h2><table class="kv">
+    <tr><td>アドレス</td><td class="mono">${esc(addr)}</td></tr>
+    <tr><td>残高（RPC）</td><td>${fmt42(bal)}</td></tr>
+    <tr><td>送信Tx数（Nonce）</td><td>${num(nonce)}</td></tr>
+    <tr><td>種別</td><td>${isContract ? "コントラクト（コード " + ((code.length-2)/2).toLocaleString() + " bytes）" : "通常アカウント (EOA)"}</td></tr>
+    <tr><td>本家scanで開く</td><td><a href="https://scan.infinitedrive.xyz/address/${addr}" target="_blank" rel="noopener">scan.infinitedrive.xyz/address/…</a></td></tr>
+    </table></div>
+    ${tokenRows ? `<div class="panel"><h2>既知トークンの残高（RPC）</h2><table><tr><th>トークン</th><th>コントラクト</th><th>残高</th></tr>${tokenRows}</table></div>` : ""}
+    <div class="panel"><h2>最近のトランザクション</h2>${histHtml}</div>`;
+}
+
+async function route(){
+  const h = location.hash.replace(/^#\/?/, "");
+  const [page, arg] = h.split("/");
+  try{
+    if(!page) await homePage();
+    else if(page === "block") await blockPage(arg);
+    else if(page === "tx") await txPage(arg);
+    else if(page === "address") await addressPage(arg);
+    else await homePage();
+  }catch(e){
+    app.innerHTML = '<div class="panel"><p class="err">取得に失敗しました: ' + esc(e.message) + '</p><p class="note">RPCが一時的に落ちている可能性があります（公開RPC3つを順に試しました）。少し待って再読み込みしてください。</p></div>';
+  }
+}
+window.addEventListener("hashchange", route);
+checkStatus(); setInterval(checkStatus, 30000);
+route();
+</script>
+</body>
+</html>
