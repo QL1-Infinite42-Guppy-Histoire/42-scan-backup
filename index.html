@@ -4,42 +4,53 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>42 Scan (Backup) — 42 Chain Explorer</title>
+<script>(function(){try{var t=localStorage.getItem('guppy-theme');document.documentElement.dataset.theme=(t==='dark'?'dark':'light');}catch(e){document.documentElement.dataset.theme='light';}})();</script>
 <style>
-  :root{--bg:#0d1117;--panel:#161b22;--line:#30363d;--txt:#e6edf3;--dim:#8b949e;--acc:#58a6ff;--ok:#3fb950;--ng:#f85149;--warn:#d29922}
-  *{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--txt);font-family:system-ui,-apple-system,"Segoe UI",sans-serif}
+  :root,:root[data-theme="light"]{--bg:#f7f8fa;--card:#ffffff;--text:#14181f;--muted:#5c6572;--line:#e3e6ec;--input-bg:#ffffff;--chip:#eef1f5;--acc:#2563eb;--acc-hover:#1d4ed8;--ok:#1d9e62;--ng:#d92d20;--warn:#b54708;--notice-bg:#fff8e6;--notice-text:#7a5a00;--shadow:0 1px 3px rgba(16,24,40,.06);--panel:var(--card);--txt:var(--text);--dim:var(--muted)}
+  :root[data-theme="dark"]{--bg:#000000;--card:#121316;--text:#f2f3f5;--muted:#9aa1ab;--line:#26282e;--input-bg:#0a0a0b;--chip:#1b1d21;--acc:#58a6ff;--acc-hover:#79b8ff;--ok:#3fb950;--ng:#f85149;--warn:#d29922;--notice-bg:#221a04;--notice-text:#f0c44c;--shadow:none;--panel:var(--card);--txt:var(--text);--dim:var(--muted)}
+  *{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--txt);font-family:system-ui,-apple-system,"Segoe UI",sans-serif;line-height:1.6}
   a{color:var(--acc);text-decoration:none} a:hover{text-decoration:underline}
   .mono{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:.92em;word-break:break-all}
-  header{background:var(--panel);border-bottom:1px solid var(--line);padding:14px 18px;position:sticky;top:0;z-index:5}
+  header{background:var(--card);border-bottom:1px solid var(--line);padding:14px 20px;position:sticky;top:0;z-index:5}
+  .head-inner{max-width:1120px;margin:0 auto}
   .row{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
-  h1{font-size:20px;margin:0} h1 small{color:var(--dim);font-size:12px;font-weight:normal}
+  h1{font-size:28px;margin:0;line-height:1.3} h1 small{color:var(--dim);font-size:13px;font-weight:normal}
   .search{flex:1;min-width:260px;display:flex;gap:8px}
-  .search input{flex:1;background:var(--bg);border:1px solid var(--line);color:var(--txt);border-radius:8px;padding:10px 12px;font-size:14px}
-  .search button,.btn{background:#21262d;border:1px solid var(--line);color:var(--txt);border-radius:8px;padding:10px 16px;cursor:pointer}
-  .search button:hover,.btn:hover{border-color:var(--acc)}
-  main{max-width:1100px;margin:0 auto;padding:18px}
-  .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin:14px 0}
-  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px}
+  .search input{flex:1;background:var(--input-bg);border:1px solid var(--line);color:var(--txt);border-radius:12px;padding:12px;font-size:16px}
+  .search input:focus{outline:2px solid var(--acc);outline-offset:1px}
+  .search button{background:var(--acc);border:1px solid var(--acc);color:#fff;border-radius:12px;padding:10px 16px;font-size:15px;font-weight:700;cursor:pointer;min-height:44px}
+  .search button:hover{background:var(--acc-hover)}
+  .btn{background:var(--chip);border:1px solid var(--line);color:var(--txt);border-radius:12px;padding:10px 16px;font-size:15px;cursor:pointer;min-height:44px}
+  .btn:hover{border-color:var(--acc)}
+  .theme-btn{margin-left:auto;background:var(--chip);border:1px solid var(--line);color:var(--txt);border-radius:12px;padding:10px 16px;font-size:15px;cursor:pointer;min-height:44px;white-space:nowrap}
+  .theme-btn:hover{border-color:var(--acc)}
+  main{max-width:1120px;margin:0 auto;padding:20px}
+  .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;margin:16px 0}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:20px;box-shadow:var(--shadow)}
   .card .k{color:var(--dim);font-size:12px} .card .v{font-size:20px;margin-top:4px}
-  .panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px;margin:14px 0;overflow-x:auto}
-  .panel h2{font-size:16px;margin:0 0 12px}
-  table{width:100%;border-collapse:collapse;font-size:13px}
-  th,td{text-align:left;padding:7px 8px;border-bottom:1px solid var(--line);white-space:nowrap}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:20px;margin:16px 0;overflow-x:auto;box-shadow:var(--shadow)}
+  .panel h2{font-size:18px;margin:0 0 12px}
+  table{width:100%;border-collapse:collapse;font-size:14px}
+  th,td{text-align:left;padding:9px 10px;border-bottom:1px solid var(--line);white-space:nowrap}
   th{color:var(--dim);font-weight:600}
   .kv td:first-child{color:var(--dim);width:180px;white-space:normal}
   .dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px}
   .ok{background:var(--ok)} .ng{background:var(--ng)} .warn{background:var(--warn)}
   .note{color:var(--dim);font-size:12px;line-height:1.6}
-  .tag{display:inline-block;border:1px solid var(--line);border-radius:20px;padding:1px 9px;font-size:11px;color:var(--dim)}
-  footer{color:var(--dim);font-size:12px;text-align:center;padding:24px;line-height:1.7}
+  .tag{display:inline-block;background:var(--chip);border:1px solid var(--line);border-radius:20px;padding:1px 9px;font-size:11px;color:var(--dim)}
+  footer{max-width:1120px;margin:0 auto;color:var(--dim);font-size:12px;text-align:center;padding:24px 20px;line-height:1.7}
   .err{color:var(--ng)} .spinner{color:var(--dim)}
-  .notice{background:#2d2108;border-bottom:1px solid var(--warn);color:#f0c44c;font-size:13px;line-height:1.6;padding:9px 18px;text-align:center}
-  .notice a{color:#f0c44c;text-decoration:underline}
+  .notice{background:var(--notice-bg);border-bottom:1px solid var(--warn);color:var(--notice-text);font-size:13px;line-height:1.6;padding:10px 20px;text-align:center}
+  .notice a{color:var(--notice-text);text-decoration:underline}
+  @media (max-width:640px){header{padding:12px 16px} main{padding:16px} .card,.panel{padding:16px} h1{font-size:22px} .theme-btn{margin-left:0}}
 </style>
 </head>
 <body>
 <header>
+ <div class="head-inner">
   <div class="row">
     <h1><a href="#/" style="color:var(--txt)">42 Scan</a> <small>backup explorer / scan.infinitedrive.xyz の予備サイト</small></h1>
+    <button type="button" class="theme-btn" id="themeToggle">🌙 黒背景</button>
   </div>
   <div class="row" style="margin-top:10px">
     <form class="search" id="searchForm">
@@ -51,6 +62,7 @@
     <span class="note"><span class="dot warn" id="rpcDot"></span>RPC: <span id="rpcStatus">接続中…</span></span>
     <span class="note"><span class="dot warn" id="apiDot"></span>本家 scan API: <span id="apiStatus">確認中…</span></span>
   </div>
+ </div>
 </header>
 <div class="notice">予備エクスプローラー（超簡易版）：ブロック・取引は全履歴を表示できます。アドレスの取引履歴一覧は、本家APIが生きている間のみ補完表示します。<br>Backup explorer (simple version): blocks &amp; transactions cover the full history. Address history is complemented from the original API while it is alive.</div>
 <main id="app"><p class="spinner">読み込み中…</p></main>
@@ -345,6 +357,15 @@ async function route(){
 window.addEventListener("hashchange", route);
 checkStatus(); setInterval(checkStatus, 30000);
 route();
+</script>
+
+<script>
+(function(){
+  var b=document.getElementById('themeToggle'); if(!b) return;
+  function render(){var d=document.documentElement.dataset.theme==='dark'; b.textContent=d?'☀️ 白背景':'🌙 黒背景';}
+  b.addEventListener('click',function(){var next=document.documentElement.dataset.theme==='dark'?'light':'dark'; document.documentElement.dataset.theme=next; try{localStorage.setItem('guppy-theme',next);}catch(e){} render();});
+  render();
+})();
 </script>
 </body>
 </html>
